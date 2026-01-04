@@ -24,27 +24,29 @@ class PomodoroApp:
         self.auth = AuthManager()
         self.db = Database()
         self.timer = PomodoroTimer()
-
+        self.current_task_id = None  # Currently active task for pomodoro tracking
         self.show_login()
 
     def show_login(self):
         """Display login screen with username and password fields."""
         self.clear_window()
-
+        # Create screen frame
         frame = ctk.CTkFrame(self.root)
         frame.pack(expand=True, padx=40, pady=40)
-
+        # Application title
         ctk.CTkLabel(frame, text="Pomodoro App", font=("Arial", 24, "bold")).pack(pady=20)
-
+        # Username entry field
         self.username_entry = ctk.CTkEntry(frame, placeholder_text="Username")
         self.username_entry.pack(pady=10)
 
         self.password_entry = ctk.CTkEntry(frame, placeholder_text="Password", show="*")
         self.password_entry.pack(pady=10)
-
+        # Login button
         ctk.CTkButton(frame, text="Login", command=self.login).pack(pady=10)
+        # Go to registration button
         ctk.CTkButton(frame, text="Register", command=self.show_register).pack(pady=5)
 
+        # Message display area
         self.auth_label = ctk.CTkLabel(frame, text="")
         self.auth_label.pack(pady=10)
 
@@ -103,7 +105,9 @@ class PomodoroApp:
         timer_frame = ctk.CTkFrame(self.root)
         timer_frame.pack(pady=10, padx=10, fill="x")
 
-        self.timer_label = ctk.CTkLabel(timer_frame, text="25:00", font=("Arial", 36))
+        # FIX: Use the actual timer time instead of hardcoded "25:00"
+        initial_time = self.timer.format_time(self.timer.current_time)
+        self.timer_label = ctk.CTkLabel(timer_frame, text=initial_time, font=("Arial", 36))
         self.timer_label.pack(pady=10)
 
         self.session_label = ctk.CTkLabel(timer_frame, text="Work Session")
@@ -141,6 +145,7 @@ class PomodoroApp:
 
     def start_timer(self):
         """Start the pomodoro timer."""
+        print("[GUI DEBUG] Start button clicked")
         self.timer.start()
 
     def pause_timer(self):
@@ -150,15 +155,43 @@ class PomodoroApp:
     def reset_timer(self):
         """Reset the pomodoro timer to initial state."""
         self.timer.reset()
+        # Update display immediately after reset
+        self.update_timer(self.timer.current_time)
+
+    def set_active_task(self, task_id):
+        """Set the currently active task for pomodoro tracking."""
+        print(f"[GUI DEBUG] Setting active task: {task_id}")
+        self.current_task_id = task_id
+        self.load_tasks()  # Refresh to show color change
 
     def update_timer(self, seconds, session_complete=False):
         """Update timer display when time changes or session completes."""
         formatted = self.timer.format_time(seconds)
         self.timer_label.configure(text=formatted)
 
-        if session_complete:
+        print(f"[GUI DEBUG] Timer updated: {formatted}, session_complete={session_complete}")
+        print(f"[GUI DEBUG] Active task ID: {self.current_task_id}")
+
+        if session_complete:  # session_complete is now "work" or "break"
+            print(f"[GUI DEBUG] Session completed: {session_complete}")
             session_type = "Break" if self.timer.is_work_session else "Work"
             self.session_label.configure(text=f"{session_type} Session")
+
+            # Only increment pomodoro count if a work session completed
+            if session_complete == "work" and self.current_task_id:
+                print(f"[GUI DEBUG] INCREMENTING POMODORO for task {self.current_task_id}")
+                # Use root.after to run code in main thread
+                self.root.after(0, self.increment_pomodoro_safe, self.current_task_id)
+            elif session_complete == "work":
+                print(f"[GUI DEBUG] Work session completed but no active task selected!")
+            else:
+                print(f"[GUI DEBUG] Break session completed, no pomodoro increment")
+
+    def increment_pomodoro_safe(self, task_id):
+        """Safely increment pomodoro count from main thread."""
+        print(f"[GUI DEBUG] Safe increment for task {task_id}")
+        self.db.increment_pomodoro(task_id)
+        self.load_tasks()  # Refresh the display
 
     def add_task(self):
         """Add a new task from the input field to the database."""
@@ -170,31 +203,52 @@ class PomodoroApp:
 
     def load_tasks(self):
         """Load and display all tasks for the current user."""
+        # Clear all currently displayed tasks
         for widget in self.tasks_list.winfo_children():
             widget.destroy()
 
+        # Get tasks from database
         tasks = self.db.get_user_tasks(self.auth.get_current_user_id())
 
+        # If no tasks
         if not tasks:
             ctk.CTkLabel(self.tasks_list, text="No tasks yet").pack(pady=20)
             return
 
+        # Display each task
         for task_id, title, completed, pomodoro_count in tasks:
+            # Create a frame for each task
             task_frame = ctk.CTkFrame(self.tasks_list)
+
+            # Highlight the currently active task
+            if task_id == self.current_task_id:
+                task_frame.configure(fg_color="#1e3a8a")  # Dark blue color
+                print(f"[GUI DEBUG] Highlighting active task: {title}")
+
             task_frame.pack(fill="x", pady=2)
 
+            # Task text (with ✓ if completed)
             text = f"✓ {title}" if completed else title
             text_color = "gray" if completed else "white"
 
+            # Task title
             label = ctk.CTkLabel(task_frame, text=text, text_color=text_color)
             label.pack(side="left", padx=5)
 
+            # Pomodoro counter
             ctk.CTkLabel(task_frame, text=f"🍅 {pomodoro_count}").pack(side="left", padx=5)
 
+            # Control buttons (only for incomplete tasks)
             if not completed:
+                # "Work on This" button to set active task
+                ctk.CTkButton(task_frame, text="Work on This", width=90,
+                              command=lambda tid=task_id: self.set_active_task(tid)).pack(side="right", padx=2)
+
+                # "Complete" button to mark task as done
                 ctk.CTkButton(task_frame, text="Complete", width=80,
                               command=lambda tid=task_id: self.complete_task(tid)).pack(side="right", padx=2)
 
+            # "Delete" button (for all tasks)
             ctk.CTkButton(task_frame, text="Delete", width=60,
                           command=lambda tid=task_id: self.delete_task(tid)).pack(side="right", padx=2)
 
