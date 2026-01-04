@@ -12,8 +12,8 @@ class PomodoroTimer:
 
     def __init__(self):
         """Initialize timer with default work/break durations."""
-        self.work_time = 25 * 60  # 25 minutes in seconds
-        self.break_time = 5 * 60  # 5 minutes in seconds
+        self.work_time = 25*60
+        self.break_time = 5*60
         self.current_time = self.work_time
         self.is_running = False
         self.is_work_session = True
@@ -52,10 +52,22 @@ class PomodoroTimer:
 
     def session_complete(self):
         """Switch between work and break sessions when timer reaches zero."""
+        # Debug print to see what's happening
+        print(f"[TIMER DEBUG] Session complete. Current is_work_session={self.is_work_session}")
+
+        # Store the session type that just completed (BEFORE switching)
+        completed_session_type = "work" if self.is_work_session else "break"
+        print(f"[TIMER DEBUG] Completed session type: {completed_session_type}")
+
+        # Switch to the next session
         self.is_work_session = not self.is_work_session
         self.current_time = self.break_time if not self.is_work_session else self.work_time
+
         if self.callback:
-            self.callback(self.current_time, True)
+            print(
+                f"[TIMER DEBUG] Calling callback with: seconds={self.current_time}, session_type={completed_session_type}")
+            # Send the completed session type to the callback
+            self.callback(self.current_time, completed_session_type)
 
     def format_time(self, seconds):
         """Convert seconds to MM:SS display format."""
